@@ -1,0 +1,149 @@
+load time.maude
+
+fmod ID is 
+    sort Id .
+    protecting STRING .
+    op id : String -> Id [ctor] .
+endfm
+
+view Id from TRIV to ID is
+    sort Elt to Id .
+endv
+
+fmod FLOW is
+    sort Flow .
+    protecting ID .
+    protecting POSRAT-TIME-DOMAIN-WITH-INF .
+
+    op flow : Id Time -> Flow [ctor] .
+endfm
+
+view Flow from TRIV to FLOW is
+    sort Elt to Flow .
+endv
+
+fmod GATEWAY is
+    sort Gateway .
+    op exclusive : -> Gateway [ctor] .
+    op parallel : -> Gateway [ctor] .
+endfm
+
+fmod NODE is
+    sort Node .
+    protecting ID .
+    protecting POSRAT-TIME-DOMAIN-WITH-INF .
+    protecting GATEWAY .
+    protecting SET {Id} .
+    protecting STRING .
+
+    op start : Id Id -> Node [ctor] .
+    op end : Id Id -> Node [ctor] .
+    op task : Id String Id Id Time Set{Id} -> Node [ctor] .
+    op split : Id Gateway Id Set{Id} -> Node [ctor] .
+    op merge : Id Gateway Set{Id} Id -> Node [ctor] .
+endfm
+
+view Node from TRIV to NODE is
+    sort Elt to Node .
+endv
+
+fmod RESOURCE is
+    sort Resource .
+    protecting ID .
+    protecting NAT .
+    op resource : Id Nat Nat -> Resource [ctor] .
+endfm
+
+view Resource from TRIV to RESOURCE is
+    sort Elt to Resource .
+endv
+
+fmod TOKEN is
+    sort Token .
+    protecting ID .
+    protecting POSRAT-TIME-DOMAIN-WITH-INF .
+    op token : Id Time -> Token [ctor] .
+endfm
+
+view Token from TRIV to TOKEN is
+    sort Elt to Token .
+endv
+
+mod PROCESS is
+    sort Process .
+    including CONFIGURATION . 
+    protecting ID .
+    protecting FLOW .
+    protecting GATEWAY .
+    protecting NODE .
+    protecting RESOURCE .
+    protecting TOKEN .
+    protecting SET{Node} .
+    protecting SET{Flow} .
+    protecting SET{Token} .
+    protecting SET{Resource} .
+    subsort Process < Cid .
+    
+    op Process : -> Process [ctor] .
+    op nodes:_ : Set{Node} -> Attribute [gather (&)] .
+    op flows:_ : Set{Flow} -> Attribute [gather (&)] .
+    op tokens:_ : Set{Token} -> Attribute [gather (&)] .
+    op gtime:_ : Time -> Attribute [gather (&)] .
+    op resources:_ : Set{Resource} -> Attribute [gather (&)] .
+
+endm
+
+mod BPMN is
+    including PROCESS .
+
+    *** Variables
+    var Conf : Configuration .
+    var T T' : Time .
+    var TI : TimeInf .
+
+    *** Operaciones y Ecuaciones
+    op delta : Configuration Time -> Configuration .
+    eq delta(none, T) = none .
+    ***eq delta(< O : VNode | clock: T, timer: TI, Atts > Conf, T’)
+    ***= < O : VNode | clock: T plus T', timer: TI monus T', Atts >
+    ***delta(Conf, T') .
+    ***eq delta(Msg Conf, T) = Msg delta(Conf, T) .
+
+    op mte : Configuration -> TimeInf .
+    eq mte(none) = INF .
+    ***eq mte(< O : VNode | timer: TI, Atts > Conf) = minimum(TI, mte(Conf)) .
+    ***eq mte(Msg Conf) = mte(Conf) .
+
+    *** Reglas
+    ***crl [tick] :
+    ***{ Conf, T }
+    ***=> { delta(Conf, T'), T + T' }
+    ***if T' := mte(Conf)
+    ***/\ 0 < T' .
+endm
+
+*** Un token activará una acción sólo si su temporizador está a cero.
+
+*** Los flujos tienen un retraso.
+
+*** Las tareas tienen una duración.
+
+*** CUando un token se coloca en un flujo, este token se inicializa con el tiempo de retarso del flujo corresponsiente
+
+*** Mientras el temporizador no sea cero, este no podrá ser utilizado, modelando así la duración asociada a dicho flujo.
+
+*** El comienzo de la ejecución de una tarea requerirá de un token con temporizador a cero en su flujo de entrada y disponer de todos los recursos necesarios.
+
+*** Una vez se den las condiciones, el token será movido a la tarea, y cuando su temporizador sea cero, la ejecución de la misma terminará y el token podrá ser movido al flujo de salida de la misma.
+
+*** Cuando hay un token con temporizador a cero en el flujo de entrada de una split parallel, su activación producirá un token en cada uno de los flujos de salida
+
+*** La activación de un merge paralelo requiere un token con temporizador cero en cada uno de sus flujos de entrada.
+
+*** La gestión del tiempo se gestionará con una regla tick.
+
+*** Funcion mte
+
+*** Funcion delta
+
+*** El atributo resources contendrá el estado de los recursos.

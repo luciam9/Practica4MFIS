@@ -1,0 +1,288 @@
+load time.maude
+
+mod RTT is 
+    protecting LTIME-INF .
+    including CONFIGURATION . 
+
+    op MAX-DELAY : -> Time .  
+
+    ---- class Node | clock: Time, rtt: TimeInf, nbr: Oid, timer: TimeInf .
+    ---- msgs rttReq rttResp : Oid Oid Time -> Msg .
+    ---- msg findRtt : Oid -> Msg . --- start a run
+    sort Node .
+    subsort Node < Cid .
+    op Node : -> Node [ctor] .
+    op clock:_ : Time -> Attribute [gather (&)] .
+    op rtt:_ : TimeInf -> Attribute [gather (&)] .
+    op nbr:_ : Oid -> Attribute [gather (&)] .
+    op timer:_ : TimeInf -> Attribute [gather (&)] .
+
+    ops rttReq rttResp : Oid Oid Time -> Msg .
+    op findRtt : Oid -> Msg .
+
+    vars O O' : Oid .  
+    vars T T' : Time .
+    vars TI TI' : TimeInf .
+    var  VNode : Node .
+    var  Atts : AttributeSet .
+    var  Conf : Configuration .
+    var  Msg : Msg .
+
+    rl [startSession] : ---- start a session, and set timer
+        findRtt(O) 
+        < O : VNode | clock: T, nbr: O', timer: INF, Atts > 
+    =>  < O : VNode | clock: T, nbr: O', timer: MAX-DELAY, Atts > 
+        rttReq(O', O, T) .
+     
+    rl [rttResponse] : ---- respond to request
+        rttReq(O, O', T) 
+        < O : VNode | Atts > 
+    =>  < O : VNode | Atts > 
+        rttResp(O', O, T) .
+        
+    crl [treatRttResp] : ---- if a response is received within MAX-DELAY, record rtt value and turn off timer
+        rttResp(O, O', T) 
+        < O : VNode | clock: T', rtt: TI, timer: TI', Atts > 
+    =>  < O : VNode | clock: T', rtt: (T' monus T), timer: INF, Atts >
+        if (T' monus T) lt MAX-DELAY . ---- /\ TI' > 0, lt is < on time values
+
+    crl [ignoreOldResp] : ---- ignore and discard old messages
+        rttResp(O, O', T) 
+        < O : VNode | clock: T', Atts > 
+    =>  < O : VNode | clock: T', Atts >
+    if (T' monus T) ge MAX-DELAY . ---- ge is >= on time values
+
+    crl [tryAgain] : ---- start new round and reset timer when timer expires:
+        < O : VNode | timer: T, clock: T', nbr: O', Atts > 
+    =>  < O : VNode | timer: MAX-DELAY, clock: T', nbr: O', Atts > 
+        rttReq(O', O, T') 
+    if T = zero .
+endm
+
+mod RTT-TIME is 
+    including RTT .
+
+    sort System .
+    op {_,_} : Configuration Time -> System .
+
+    vars O O' : Oid .  
+    vars T T' : Time .
+    vars TI TI' : TimeInf .
+    var  VNode : Node .
+    var  Atts : AttributeSet .
+    var  Conf : Configuration .
+    var  Msg : Msg .
+
+    --- advance of time over a configuration
+    op delta : Configuration Time -> Configuration .
+    eq delta(none, T) = none .
+    eq delta(< O : VNode | clock: T, timer: TI, Atts > Conf, T') 
+        = < O : VNode | clock: T plus T', timer: TI monus T', Atts > 
+          delta(Conf, T') .
+    eq delta(Msg Conf, T) = Msg delta(Conf, T) .
+
+    ---- maximum time elapse (so that no event is lost)
+    op mte : Configuration -> TimeInf .
+    eq mte(none) = INF .
+    eq mte(< O : VNode | timer: TI, Atts > Conf) = minimum(TI, mte(Conf)) .
+    eq mte(Msg Conf) = mte(Conf) .
+
+    ops n1 n2 n3 : -> Oid .
+    op initState : -> System .
+    eq initState 
+     = { findRtt(n1) findRtt(n2) findRtt(n3)
+         < n1 : Node | clock: zero, timer: INF, nbr: n2, rtt: INF >
+         < n2 : Node | clock: zero, timer: INF, nbr: n3, rtt: INF >
+         < n3 : Node | clock: zero, timer: INF, nbr: n1, rtt: INF >,
+         zero } .
+endm
+
+mod RTT-TIME-1 is 
+    including RTT-TIME .
+    protecting NAT-TIME-DOMAIN-WITH-INF .
+    
+    eq MAX-DELAY = 4 .
+
+    vars T T' : Time .
+    var  Conf : Configuration .
+
+    crl [tick] : ---- tick rule should not advance time beyond expiration of a timer
+       { Conf, T } 
+    => { delta(Conf, T'), T + T' } 
+    if T' := mte(Conf)
+    /\ 0 < T' .
+endm
+
+---(
+Maude> frew [50] initState .
+frewrite [50] in RTT-TIME-1 : initState .
+rewrites: 889 in 1ms cpu (1ms real) (779141 rewrites/second)
+result (sort not calculated): {(< n1 : Node | clock: 48,rtt: INF,nbr: n2,timer: 4 > rttReq(n2, n1, 48)) (< n2 : Node | clock: 48,rtt: INF,nbr: n3,timer: 4 > rttReq(n3, n2,
+    48)) < n3 : Node | clock: 48,rtt: INF,nbr: n1,timer: 0 > rttReq(n1, n3, 36) rttReq(n1, n3, 40) rttReq(n1, n3, 44) rttReq(n2, n1, 8) rttReq(n2, n1, 12) rttReq(n2, n1,
+    16) rttReq(n2, n1, 20) rttReq(n2, n1, 24) rttReq(n2, n1, 28) rttReq(n2, n1, 32) rttReq(n2, n1, 36) rttReq(n2, n1, 40) rttReq(n2, n1, 44) rttReq(n3, n2, 12) rttReq(n3,
+    n2, 16) rttReq(n3, n2, 20) rttReq(n3, n2, 24) rttReq(n3, n2, 28) rttReq(n3, n2, 32) rttReq(n3, n2, 36) rttReq(n3, n2, 40) rttReq(n3, n2, 44) rttResp(n3, n1, 32),48}
+
+Maude> search [2,25] initState =>! 
+         { < n1 : Node | Atts1:AttributeSet > 
+           < n2 : Node | Atts2:AttributeSet > 
+           < n3 : Node | Atts3:AttributeSet >, T:Time } .
+search [2, 15] in RTT-TIME-1 : initState =>! {< n1 : Node | Atts1:AttributeSet > < n2 : Node | Atts2:AttributeSet > < n3 : Node | Atts3:AttributeSet >,T} .
+
+Solution 1 (state 3171)
+states: 6191  rewrites: 200715 in 173ms cpu (174ms real) (1159498 rewrites/second)
+Atts1:AttributeSet --> clock: 0,rtt: 0,nbr: n2,timer: INF
+Atts2:AttributeSet --> clock: 0,rtt: 0,nbr: n3,timer: INF
+Atts3:AttributeSet --> clock: 0,rtt: 0,nbr: n1,timer: INF
+T --> 0
+
+Solution 2 (state 32251)
+states: 60399  rewrites: 2458270 in 2111ms cpu (2128ms real) (1164018 rewrites/second)
+Atts1:AttributeSet --> clock: 4,rtt: 0,nbr: n2,timer: INF
+Atts2:AttributeSet --> clock: 4,rtt: 0,nbr: n3,timer: INF
+Atts3:AttributeSet --> clock: 4,rtt: 0,nbr: n1,timer: INF
+T --> 4
+---)
+
+mod RTT-TIME-2 is 
+    including RTT-TIME .
+    ---- protecting NAT-TIME-DOMAIN-WITH-INF .
+    protecting POSRAT-TIME-DOMAIN-WITH-INF .
+
+    eq MAX-DELAY = 4 .
+
+    vars T T' : Time .
+    var  Conf : Configuration .
+
+    crl [tick] : ---- tick rule should not advance time beyond expiration of a timer
+        { Conf, T } 
+        => { delta(Conf, T'), T + T' } 
+        if T' := mte(Conf)
+        /\ 0 < T' .
+endm
+
+---(
+Maude> frew [50] initState .
+frewrite [50] in RTT-TIME-2 : initState .
+rewrites: 889 in 0ms cpu (1ms real) (2840255 rewrites/second)
+result (sort not calculated): {(< n1 : Node | clock: 48,rtt: INF,nbr: n2,timer: 4 > rttReq(n2, n1, 48)) (< n2 : Node | clock: 48,rtt: INF,nbr: n3,timer: 4 > rttReq(n3, n2,
+    48)) < n3 : Node | clock: 48,rtt: INF,nbr: n1,timer: 0 > rttReq(n1, n3, 36) rttReq(n1, n3, 40) rttReq(n1, n3, 44) rttReq(n2, n1, 8) rttReq(n2, n1, 12) rttReq(n2, n1,
+    16) rttReq(n2, n1, 20) rttReq(n2, n1, 24) rttReq(n2, n1, 28) rttReq(n2, n1, 32) rttReq(n2, n1, 36) rttReq(n2, n1, 40) rttReq(n2, n1, 44) rttReq(n3, n2, 12) rttReq(n3,
+    n2, 16) rttReq(n3, n2, 20) rttReq(n3, n2, 24) rttReq(n3, n2, 28) rttReq(n3, n2, 32) rttReq(n3, n2, 36) rttReq(n3, n2, 40) rttReq(n3, n2, 44) rttResp(n3, n1, 32),48}
+Maude> search [2,25] initState =>! { < n1 : Node | Atts1:AttributeSet > < n2 : Node | Atts2:AttributeSet > < n3 : Node | Atts3:AttributeSet >, T:Time } .
+search [2, 25] in RTT-TIME-2 : initState =>! {< n1 : Node | Atts1:AttributeSet > < n2 : Node | Atts2:AttributeSet > < n3 : Node | Atts3:AttributeSet >,T} .
+
+Solution 1 (state 3171)
+states: 6191  rewrites: 200715 in 186ms cpu (187ms real) (1074180 rewrites/second)
+Atts1:AttributeSet --> clock: 0,rtt: 0,nbr: n2,timer: INF
+Atts2:AttributeSet --> clock: 0,rtt: 0,nbr: n3,timer: INF
+Atts3:AttributeSet --> clock: 0,rtt: 0,nbr: n1,timer: INF
+T --> 0
+
+Solution 2 (state 32251)
+states: 60399  rewrites: 2458270 in 2353ms cpu (2363ms real) (1044709 rewrites/second)
+Atts1:AttributeSet --> clock: 4,rtt: 0,nbr: n2,timer: INF
+Atts2:AttributeSet --> clock: 4,rtt: 0,nbr: n3,timer: INF
+Atts3:AttributeSet --> clock: 4,rtt: 0,nbr: n1,timer: INF
+T --> 4
+---)
+
+mod RTT-TIME-BOUNDED is 
+    including RTT-TIME .
+    ---- protecting NAT-TIME-DOMAIN-WITH-INF .
+    protecting POSRAT-TIME-DOMAIN-WITH-INF .
+
+    eq MAX-DELAY = 4 .
+
+    vars T T' : Time .
+    var  Conf : Configuration .
+
+    crl [tick] : ---- tick rule should not advance time beyond expiration of a timer
+        { Conf, T } 
+        => { delta(Conf, T'), T + T' } 
+        if T' := mte(Conf)
+        /\ T + T' < 10
+        /\ 0 < T' .
+endm
+
+---(
+Maude> frew initState .
+frewrite in RTT-TIME-BOUNDED : initState .
+rewrites: 353 in 0ms cpu (0ms real) (411901 rewrites/second)
+result System: {< n1 : Node | clock: 8,rtt: 0,nbr: n2,timer: INF > < n2 : Node | clock: 8,rtt: 0,nbr: n3,timer: INF > < n3 : Node | clock: 8,rtt: 0,nbr: n1,timer: INF >,8}
+Maude> search initState =>! { < n1 : Node | Atts1:AttributeSet > < n2 : Node | Atts2:AttributeSet > < n3 : Node | Atts3:AttributeSet >, T:Time } .
+search in RTT-TIME-BOUNDED : initState =>! {< n1 : Node | Atts1:AttributeSet > < n2 : Node | Atts2:AttributeSet > < n3 : Node | Atts3:AttributeSet >,T} .
+
+Solution 1 (state 2878)
+states: 5125  rewrites: 182729 in 208ms cpu (212ms real) (877475 rewrites/second)
+Atts1:AttributeSet --> clock: 0,rtt: 0,nbr: n2,timer: INF
+Atts2:AttributeSet --> clock: 0,rtt: 0,nbr: n3,timer: INF
+Atts3:AttributeSet --> clock: 0,rtt: 0,nbr: n1,timer: INF
+T --> 0
+
+Solution 2 (state 16702)
+states: 23375  rewrites: 1260883 in 1200ms cpu (1228ms real) (1050231 rewrites/second)
+Atts1:AttributeSet --> clock: 4,rtt: 0,nbr: n2,timer: INF
+Atts2:AttributeSet --> clock: 4,rtt: 0,nbr: n3,timer: INF
+Atts3:AttributeSet --> clock: 4,rtt: 0,nbr: n1,timer: INF
+T --> 4
+
+Solution 3 (state 43161)
+states: 47512  rewrites: 3730918 in 7520ms cpu (7554ms real) (496122 rewrites/second)
+Atts1:AttributeSet --> clock: 8,rtt: 0,nbr: n2,timer: INF
+Atts2:AttributeSet --> clock: 8,rtt: 0,nbr: n3,timer: INF
+Atts3:AttributeSet --> clock: 8,rtt: 0,nbr: n1,timer: INF
+T --> 8
+
+No more solutions.
+states: 52912  rewrites: 4805205 in 9457ms cpu (9495ms real) (508091 rewrites/second)
+---)
+
+sload model-checker.maude 
+
+mod MC-RTT is 
+    including RTT-TIME-BOUNDED . 
+    including MODEL-CHECKER .
+
+    subsort System < State .
+
+    op superfluousMsg : -> Prop [ctor] .
+
+    vars REST : Configuration . 
+    vars O O' : Oid . 
+    vars T T' T'' : Time .
+    var  TI : TimeInf .
+    var  Atts : AttributeSet .
+
+    ceq { REST < O : Node | rtt: TI, clock: T, Atts > rttReq(O', O, T'), T'' }
+        |= superfluousMsg = true 
+        if T > T' + MAX-DELAY .
+    ceq { REST < O : Node | rtt: TI, clock: T, Atts > rttResp(O, O', T'), T'' }
+        |= superfluousMsg = true 
+        if T > T' + MAX-DELAY .
+endm
+
+red modelCheck(initState, [] ~ superfluousMsg) .
+---(
+reduce in MC-RTT : modelCheck(initState, []~ superfluousMsg) .
+rewrites: 924 in 4ms cpu (4ms real) (217309 rewrites/second)
+result ModelCheckResult: 
+  counterexample(
+    { { findRtt(n1) findRtt(n2) findRtt(n3) < n1 : Node | clock: 0,rtt: INF,nbr: n2,timer: INF > < n2 : Node | clock: 0,rtt: INF,nbr: n3, timer: INF > < n3 : Node | clock: 0,rtt: INF,nbr: n1,timer: INF >, 0 }, 'startSession} 
+    { { findRtt(n2) findRtt(n3) < n1 : Node | clock: 0,rtt: INF,nbr: n2,timer: 4 > < n2 : Node | clock: 0,rtt: INF,nbr: n3,timer: INF > < n3 : Node | clock: 0,rtt: INF,nbr: n1,timer: INF > rttReq(n2, n1, 0), 0 }, 'tick} 
+    { { findRtt(n2) findRtt(n3) < n1 : Node | clock: 4,rtt: INF,nbr: n2,timer: 0 > < n2 : Node | clock: 4,rtt: INF,nbr: n3,timer: INF > < n3 : Node | clock: 4,rtt: INF,nbr: n1,timer: INF > rttReq(n2, n1, 0), 4 }, 'startSession} 
+    { { findRtt(n3) < n1 : Node | clock: 4,rtt: INF,nbr: n2,timer: 0 > < n2 : Node | clock: 4,rtt: INF,nbr: n3,timer: 4 > < n3 : Node | clock: 4,rtt: INF,nbr: n1,timer: INF > rttReq(n2, n1, 0) rttReq(n3, n2, 4), 4 }, 'startSession} 
+    { { < n1 : Node | clock: 4,rtt: INF,nbr: n2,timer: 0 > < n2 : Node | clock: 4,rtt: INF,nbr: n3, timer: 4 > < n3 : Node | clock: 4,rtt: INF,nbr: n1,timer: 4 > rttReq(n1, n3, 4) rttReq(n2, n1, 0) rttReq(n3, n2, 4), 4 }, 'rttResponse} 
+    { { < n1 : Node | clock: 4,rtt: INF, nbr: n2,timer: 0 > < n2 : Node | clock: 4,rtt: INF,nbr: n3,timer: 4 > < n3 : Node | clock: 4,rtt: INF,nbr: n1,timer: 4 > rttReq(n2, n1, 0) rttReq(n3, n2, 4) rttResp( n3, n1, 4), 4 }, 'rttResponse} 
+    { { < n1 : Node | clock: 4,rtt: INF,nbr: n2,timer: 0 > < n2 : Node | clock: 4,rtt: INF,nbr: n3,timer: 4 > < n3 : Node | clock: 4,rtt: INF, nbr: n1,timer: 4 > rttReq(n3, n2, 4) rttResp(n1, n2, 0) rttResp(n3, n1, 4), 4 }, 'rttResponse} 
+    { { < n1 : Node | clock: 4,rtt: INF,nbr: n2,timer: 0 > < n2 : Node | clock: 4,rtt: INF,nbr: n3,timer: 4 > < n3 : Node | clock: 4,rtt: INF,nbr: n1,timer: 4 > rttResp(n1, n2, 0) rttResp(n2, n3, 4) rttResp(n3, n1, 4), 4 }, 'treatRttResp} 
+    { { < n1 : Node | clock: 4,rtt: INF,nbr: n2,timer: 0 > < n2 : Node | clock: 4,rtt: 0,nbr: n3,timer: INF > < n3 : Node | clock: 4,rtt: INF,nbr: n1,timer: 4 > rttResp(n1, n2, 0) rttResp(n3, n1, 4), 4 }, 'treatRttResp} 
+    { { < n1 : Node | clock: 4,rtt: INF,nbr: n2,timer: 0 > < n2 : Node | clock: 4,rtt: 0,nbr: n3,timer: INF > < n3 : Node | clock: 4, rtt: 0,nbr: n1,timer: INF > rttResp(n1, n2, 0), 4 }, 'tryAgain} 
+    { { < n1 : Node | clock: 4,rtt: INF,nbr: n2,timer: 4 > < n2 : Node | clock: 4,rtt: 0,nbr: n3,timer: INF > < n3 : Node | clock: 4,rtt: 0,nbr: n1,timer: INF > rttReq(n2, n1, 4) rttResp(n1, n2, 0), 4 }, 'tick} 
+    { { < n1 : Node | clock: 8,rtt: INF,nbr: n2,timer: 0 > < n2 : Node | clock: 8,rtt: 0,nbr: n3,timer: INF > < n3 : Node | clock: 8,rtt: 0,nbr: n1,timer: INF > rttReq(n2, n1, 4) rttResp(n1, n2, 0), 8 }, 'rttResponse} 
+    { { < n1 : Node | clock: 8, rtt: INF,nbr: n2,timer: 0 > < n2 : Node | clock: 8,rtt: 0,nbr: n3,timer: INF > < n3 : Node | clock: 8,rtt: 0,nbr: n1,timer: INF > rttResp(n1, n2, 0) rttResp(n1, n2, 4), 8 }, 'ignoreOldResp} 
+    { { < n1 : Node | clock: 8,rtt: INF,nbr: n2,timer: 0 > < n2 : Node | clock: 8,rtt: 0,nbr: n3,timer: INF > < n3 : Node | clock: 8,rtt: 0,nbr: n1, timer: INF > rttResp(n1, n2, 4), 8 }, 'ignoreOldResp} 
+    { { < n1 : Node | clock: 8,rtt: INF,nbr: n2,timer: 0 > < n2 : Node | clock: 8,rtt: 0,nbr: n3,timer: INF > < n3 : Node | clock: 8,rtt: 0,nbr: n1,timer: INF >,8}, 'tryAgain} 
+    { { < n1 : Node | clock: 8,rtt: INF,nbr: n2,timer: 4 > < n2 : Node | clock: 8,rtt: 0,nbr: n3,timer: INF > < n3 : Node | clock: 8,rtt: 0,nbr: n1,timer: INF > rttReq(n2, n1, 8), 8 }, 'rttResponse} 
+    { { < n1 : Node | clock: 8,rtt: INF,nbr: n2,timer: 4 > < n2 : Node | clock: 8,rtt: 0,nbr: n3,timer: INF > < n3 : Node | clock: 8,rtt: 0,nbr: n1,timer: INF > rttResp(n1, n2, 8), 8 },'treatRttResp}, 
+    { { < n1 : Node | clock: 8,rtt: 0,nbr: n2,timer: INF > < n2 : Node | clock: 8,rtt: 0,nbr: n3,timer: INF > < n3 : Node | clock: 8,rtt: 0,nbr: n1,timer: INF >,8},deadlock})
+---)

@@ -1,0 +1,190 @@
+load time.maude
+
+mod RTT-DLYS is 
+    including CONFIGURATION . 
+    protecting POSRAT-TIME-DOMAIN-WITH-INF .
+    protecting CONVERSION .
+
+    sort DlyMsg .
+    subsorts Msg < DlyMsg < Configuration .
+    op dly : Msg Time -> DlyMsg [ctor right id: 0] . ---- dly(M, 0) = M 
+
+    op MAX-DELAY : -> Time .  
+    eq MAX-DELAY = 4 .
+
+    ---- class Node | clock: Time, rtt: TimeInf, nbr: Oid, timer: TimeInf .
+    ---- msgs rttReq rttResp : Oid Oid Time -> Msg .
+    ---- msg findRtt : Oid -> Msg . --- start a run
+    sort Node .
+    subsort Node < Cid .
+    op Node : -> Node [ctor] .
+    op clock:_ : Time -> Attribute [gather (&)] .
+    op rtt:_ : TimeInf -> Attribute [gather (&)] .
+    op nbr:_ : Oid -> Attribute [gather (&)] .
+    op timer:_ : TimeInf -> Attribute [gather (&)] .
+
+    ops rttReq rttResp : Oid Oid Time -> Msg .
+    op findRtt : Oid -> Msg .
+
+    ---- class LocatedNode | x: Float, y: Float .
+    ---- subclass LocatedNode < Node .
+    sort LocatedNode .
+    subsort LocatedNode < Node .
+    op LocatedNode : -> LocatedNode [ctor] .
+    ops x:_ y:_ : Float -> Attribute [gather (&)] .
+
+    vars O O' : Oid .  
+    vars T T' : Time .
+    vars TI TI' : TimeInf .
+    vars VLocatedNode VLocatedNode' : LocatedNode .
+    vars Atts Atts' : AttributeSet .
+    var  Conf : Configuration .
+    var  Msg : Msg .
+    vars F X X' Y Y' : Float .
+
+    rl [startSession] : ---- start a session, and set timer
+        findRtt(O) 
+        < O : VLocatedNode | clock: T, nbr: O', timer: INF, x: X, y: Y, Atts > 
+        < O' : VLocatedNode' | x: X', y: Y', Atts' > 
+    =>  < O : VLocatedNode | clock: T, nbr: O', timer: MAX-DELAY, x: X, y: Y, Atts > 
+        < O' : VLocatedNode' | x: X', y: Y', Atts' > 
+        dly(rttReq(O', O, T), time(distance(X, Y, X', Y'))) .
+     
+    rl [rttResponse] : ---- respond to request
+        rttReq(O, O', T) 
+        < O : VLocatedNode | x: X, y: Y, Atts > 
+        < O' : VLocatedNode | x: X', y: Y', Atts' > 
+    =>  < O : VLocatedNode | x: X, y: Y, Atts > 
+        < O' : VLocatedNode | x: X', y: Y', Atts' > 
+        dly(rttResp(O', O, T), time(distance(X, Y, X', Y'))) .
+        
+    crl [treatRttResp] : ---- if a response is received within MAX-DELAY, record rtt value and turn off timer
+        rttResp(O, O', T) 
+        < O : VLocatedNode | clock: T', rtt: TI, timer: TI', Atts > 
+    =>  < O : VLocatedNode | clock: T', rtt: (T' monus T), timer: INF, Atts >
+        if (T' monus T) lt MAX-DELAY . ---- /\ TI' > 0, lt is < on time values
+
+    crl [ignoreOldResp] : ---- ignore and discard old messages
+        rttResp(O, O', T) 
+        < O : VLocatedNode | clock: T', Atts > 
+    =>  < O : VLocatedNode | clock: T', Atts >
+    if (T' monus T) ge MAX-DELAY . ---- ge is >= on time values
+
+    rl [tryAgain] : ---- start new round and reset timer when timer expires:
+        < O : VLocatedNode | timer: 0, clock: T, nbr: O', x: X, y: Y, Atts > 
+        < O' : VLocatedNode | x: X', y: Y', Atts' > 
+    =>  < O : VLocatedNode | timer: MAX-DELAY, clock: T, nbr: O', x: X, y: Y, Atts > 
+        < O' : VLocatedNode | x: X', y: Y', Atts' > 
+        dly(rttReq(O', O, T), time(distance(X, Y, X', Y'))) .
+
+    op PROPAGATION-SPEED : -> Float .
+    eq PROPAGATION-SPEED = 250000000.0 . ---- m/sec. ---- estimated
+    op distance : Float Float Float Float -> Float .
+    eq distance(X, Y, X', Y') = sqrt((X - X') ^ 2.0 + ((Y - Y') ^ 2.0)) .
+    op time : Float -> Time .
+    eq time(F) = rat(F / PROPAGATION-SPEED) .
+endm
+   
+mod RTT-TIME-DLYS is 
+    including RTT-DLYS .
+
+    sort System .
+    op {_,_} : Configuration Time -> System .
+
+    vars O O' : Oid .  
+    vars T T' : Time .
+    vars TI TI' : TimeInf .
+    var  VNode : Node .
+    var  Atts : AttributeSet .
+    var  Conf : Configuration .
+    var  Msg : Msg .
+ 
+    --- advance of time over a configuration
+    op delta : Configuration Time -> Configuration .
+    eq delta(none, T) = none .
+    eq delta(< O : VNode | clock: T, timer: TI, Atts > Conf, T') 
+        = < O : VNode | clock: T plus T', timer: TI monus T', Atts > 
+          delta(Conf, T') .
+    eq delta(Msg Conf, T) = Msg delta(Conf, T) .
+    eq delta(dly(Msg, T) Conf, T') = dly(Msg, T monus T') delta(Conf, T) . 
+
+    ---- maximum time elapse (so that no event is lost)
+    op mte : Configuration -> TimeInf .
+    eq mte(none) = INF .
+    eq mte(< O : VNode | timer: TI, Atts > Conf) = minimum(TI, mte(Conf)) .
+    eq mte(dly(Msg, T) Conf) = minimum(T, mte(Conf)) .
+
+    ops n1 n2 n3 : -> Oid .
+    op initState : -> System .
+    eq initState 
+     = { findRtt(n1) findRtt(n2) findRtt(n3)
+         < n1 : LocatedNode | clock: zero, timer: INF, nbr: n2, rtt: INF, x: 200.0, y: 500.0 >
+         < n2 : LocatedNode | clock: zero, timer: INF, nbr: n3, rtt: INF, x: -200.0, y: 100.0 >
+         < n3 : LocatedNode | clock: zero, timer: INF, nbr: n1, rtt: INF, x: 100.0, y: -300.0 >,
+         zero } .
+
+    crl [tick] : ---- tick rule should not advance time beyond expiration of a timer
+        { Conf, T } 
+        => { delta(Conf, T'), T + T' } 
+        if T' := mte(Conf)
+        /\ T + T' < 5
+        /\ 0 < T' .
+endm
+
+---(
+Maude> frewrite in RTT-TIME-DLYS : initState .
+rewrites: 1099 in 0ms cpu (0ms real) (1267589 rewrites/second)
+result System: {< n1 : LocatedNode | clock: 7614587153364233/1180591620717411303424,rtt:
+    10065114264125953/2361183241434822606848,nbr: n2,timer: INF,x: 2.0e+2,y: 5.0e+2 > < n2 :
+    LocatedNode | clock: 7614587153364233/1180591620717411303424,rtt:
+    7614587153364233/2361183241434822606848,nbr: n3,timer: INF,x: -2.0e+2,y: 1.0e+2 > < n3 :
+    LocatedNode | clock: 7614587153364233/1180591620717411303424,rtt:
+    7614587153364233/1180591620717411303424,nbr: n1,timer: INF,x: 1.0e+2,y: -3.0e+2 >,
+    7614587153364233/1180591620717411303424}
+
+Maude> search in RTT-TIME-DLYS : initState =>! 
+         { < n1 : LocatedNode | Atts1:AttributeSet > 
+           < n2 : LocatedNode | Atts2:AttributeSet > 
+           < n3 : LocatedNode | Atts3:AttributeSet >, T } .
+
+Solution 1 (state 19)
+states: 20  rewrites: 2228 in 1ms cpu (1ms real) (1259468 rewrites/second)
+Atts1:AttributeSet --> clock: 7614587153364233/1180591620717411303424,rtt:
+    10065114264125953/2361183241434822606848,nbr: n2,timer: INF,x: 2.0e+2,y: 5.0e+2
+Atts2:AttributeSet --> clock: 7614587153364233/1180591620717411303424,rtt:
+    7614587153364233/2361183241434822606848,nbr: n3,timer: INF,x: -2.0e+2,y: 1.0e+2
+Atts3:AttributeSet --> clock: 7614587153364233/1180591620717411303424,rtt:
+    7614587153364233/1180591620717411303424,nbr: n1,timer: INF,x: 1.0e+2,y: -3.0e+2
+T --> 7614587153364233/1180591620717411303424
+
+No more solutions.
+states: 20  rewrites: 2228 in 1ms cpu (1ms real) (1221491 rewrites/second)
+)
+
+sload model-checker.maude 
+
+mod MC-RTT is 
+    including RTT-TIME-DLYS . 
+    including MODEL-CHECKER .
+
+    subsort System < State .
+
+    op superfluousMsg : -> Prop [ctor] .
+
+    vars REST : Configuration . 
+    vars O O' : Oid . 
+    vars T T' T'' : Time .
+    var  TI : TimeInf .
+    var  Atts : AttributeSet .
+    var  Msg : Msg .
+
+    eq { REST dly(Msg, T), T' } |= superfluousMsg = { REST Msg, T' } |= superfluousMsg .
+    ceq { REST < O : LocatedNode | rtt: TI, clock: T, Atts > rttReq(O', O, T'), T'' }
+        |= superfluousMsg = true 
+        if T > T' + MAX-DELAY .
+    ceq { REST < O : LocatedNode | rtt: TI, clock: T, Atts > rttResp(O, O', T'), T'' }
+        |= superfluousMsg = true 
+        if T > T' + MAX-DELAY .
+endm
+
+red modelCheck(initState, [] ~ superfluousMsg) .
