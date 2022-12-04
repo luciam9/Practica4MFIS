@@ -203,15 +203,15 @@ mod BPMN-SEM is
 
     *** La gestión del tiempo se gestionará con una regla tick.
     crl [tick] : < O : Process | gtime: T, tokens: Tokens, Atts >
-    => delta(< O : Process | gtime: T, tokens: Tokens, Atts >, T') if T' := mte(< O : Process | gtime: T, tokens: Tokens, Atts >) /\ 0 < T' /\ (T + T') <= 100 .
+        => delta(< O : Process | gtime: T, tokens: Tokens, Atts >, T') if T' := mte(< O : Process | gtime: T, tokens: Tokens, Atts >) /\ 0 < T' /\ (T + T') <= 100 .
 
     *** Al comenzar la ejecución del proceso anterior tenemos un token en el nodo inicial, una vez su tiempo se hace 0, el token pasará al flujo de salId1a de dicho nodo inicial.
     rl [start] : < O : Process | nodes: (start(Id1, Id2), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id1, 0), Tokens), Atts >
     => < O : Process | nodes: (start(Id1, Id2), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id2, T), Tokens), Atts > .
 
     *** Una vez se den las condiciones, el token será movId1o a la tarea, y cuando su temporizador sea cero, la ejecución de la misma terminará y el token podrá ser movId1o al flujo de salId1a de la misma.
-    crl [flow-task] : < O : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id2, T'), Flows), tokens: (token(Id1, 0), Tokens), resources: Resources, Atts >
-                =>  < O : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id1, T'), Flows), tokens: (token(Id2, T), Tokens), resources: takeResources(Ids, Resources), Atts > if (resourcesAvailables(Ids, Resources)) .  
+    crl [flow-task] : < O : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id2, T'), Flows), tokens: (token(Id2, 0), Tokens), resources: Resources, Atts >
+                  =>  < O : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id2, T'), Flows), tokens: (token(Id1, T), Tokens), resources: takeResources(Ids, Resources), Atts > if (resourcesAvailables(Ids, Resources)) .  
     
     *** CUando un token se coloca en un flujo, este token se inicializa con el tiempo de retarso del flujo corresponsiente
     rl [task-flow] : < O : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id3, T'), Flows), tokens: (token(Id1, 0), Tokens), resources: R, Atts > 
