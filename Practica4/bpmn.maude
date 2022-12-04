@@ -211,11 +211,11 @@ mod BPMN-SEM is
 
     *** Una vez se den las condiciones, el token será movId1o a la tarea, y cuando su temporizador sea cero, la ejecución de la misma terminará y el token podrá ser movId1o al flujo de salId1a de la misma.
     crl [flow-task] : < O : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id2, T'), Flows), tokens: (token(Id1, 0), Tokens), resources: Resources, Atts >
-                =>  < o : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id1, T'), Flows), tokens: (token(Id2, T), Tokens), resources: takeResources(Ids, Resources), Atts > if (resourcesAvailables(Ids, Resources)) .  
+                =>  < O : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id1, T'), Flows), tokens: (token(Id2, T), Tokens), resources: takeResources(Ids, Resources), Atts > if (resourcesAvailables(Ids, Resources)) .  
     
     *** CUando un token se coloca en un flujo, este token se inicializa con el tiempo de retarso del flujo corresponsiente
-    rl [task-flow] : < o : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id3, T'), Flows), tokens: (token(Id1, 0), Tokens), resources: R, Atts > 
-                 =>  < o : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id3, T'), Flows), tokens: (token(Id3, T'), Tokens), resources: returnResources(Ids, R), Atts > .
+    rl [task-flow] : < O : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id3, T'), Flows), tokens: (token(Id1, 0), Tokens), resources: R, Atts > 
+                 =>  < O : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id3, T'), Flows), tokens: (token(Id3, T'), Tokens), resources: returnResources(Ids, R), Atts > .
                  
     rl [flow-end] : < O : Process | nodes: (end(Id1, Id2), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id2, 0), Tokens), Atts >
                 => < O : Process | nodes: (end(Id1, Id2), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id1, 0), Tokens), Atts > .
@@ -237,6 +237,8 @@ mod BPMN-SEM is
 
     crl [flow-mergeP] : < O : Process | nodes: (merge(Id1, parallel, Ids, Id2), Nodes), flows: Flows, tokens: Tokens, Atts > 
                      => < O : Process | nodes: (merge(Id1, parallel, Ids, Id2), Nodes), flows: Flows, tokens: (token(Id1, 0), deleteTokens(Ids, Tokens)), Atts > if checkMerge(Ids, Tokens) .
+
+endm
 *** Los flujos tienen un retraso.
 
 *** Un token activará una acción sólo si su temporizador está a cero.
