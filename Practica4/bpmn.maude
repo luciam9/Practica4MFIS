@@ -98,37 +98,36 @@ mod PROCESS is
 
 endm
 
-mod BPMN-SEM is
-    including PROCESS .
+mod BPMN-SEM is 
+    protecting PROCESS .
 
     *** Variables
-    var Id1 Id2 Id3 Id4 : Id .
-    vars O O' : Oid .
+    var Id Id1 Id2 Id3 : Id .
+    var o : Oid .
     var Atts : AttributeSet .
-    var Conf : Configuration .
     var T T' : Time .
-    var TI : TimeInf .
-    var Tokens : Set{Token} .
     var Nodes : Set{Node} .
-    var Ids : Set{Id} .
     var Flows : Set{Flow} .
-    var R : Set{Resource} .
-    var N : Nat .
-    var No : Node .
+    var Tokens : Set{Token} .
     var Name : String .
-    var Resources : Set{Resource} .
+    var Ids : Set{Id} .
+    var Conf : Configuration .
+    var TI TI' : TimeInf .
     var G : Gateway .
+    var N : Node .
+    var R : Set{Resource} .
+    var M : Nat .
 
     *** Operaciones y Ecuaciones
     op none : -> Configuration [ctor] .
 
     op reduce : Set{Token} Time -> Set{Token} .
     eq reduce(empty, T) = empty .
-    eq reduce((token(Id1, T), Tokens), T') = (token(Id1, T - T'), reduce(Tokens, T')) .
-    
+    eq reduce((token(Id1, T'), Tokens), T) = (token(Id1, T' monus T), reduce(Tokens, T)) .
+
     op delta : Configuration Time -> Configuration .
-    eq delta(none, T) = none .
-    eq delta(< O : Process | gtime: T, tokens: Tokens, Atts >, T') = < O : Process | gtime: T + T', tokens: Tokens, Atts > .
+    eq delta(none, T') = none .
+    eq delta(< o : Process | gtime: T, tokens: Tokens, Atts >, T') = < o : Process | gtime: T plus T', tokens: reduce(Tokens, T'),  Atts > .
 
     op minimum : Set{Token} -> Token .
     eq minimum(empty) = empty .
@@ -138,38 +137,22 @@ mod BPMN-SEM is
 
     op mte : Configuration -> TimeInf .
     eq mte(none) = INF .
-    eq mte(< O : Process | tokens: Tokens, nodes: Nodes, Atts >) = getTime(minimum(readyTokens(Tokens, Nodes))) .
-    
+    eq mte(< o : Process | tokens: Tokens, nodes: Nodes, Atts >) = getTime(minimum(readyTokens(Tokens, Nodes))) .
+
     op getTime : Token -> TimeInf .
     eq getTime(empty) = INF .
     eq getTime(token(Id1, T)) = T .
-    
-    op checkMerge : Set{Id} Set{Token} -> Bool .
-    eq checkMerge(empty, empty) = true .
-    eq checkMerge(empty, Tokens) = true .
-    eq checkMerge((Id1, Ids), Tokens) = ((checkMergeById(Id1, Tokens)) and checkMerge(Ids, Tokens)) .
 
-    op checkMergeById : Id Set{Token} -> Bool .
-    eq checkMergeById(Id1, empty) = false .
-    eq checkMergeById(Id1, (token(Id1, 0), Tokens)) = true .
-    eq checkMergeById(Id1, (token(Id2, T), Tokens)) = checkMergeById(Id1, Tokens) .
-    
     op ready : Token Set{Node} Set{Token} -> Bool .
-    eq ready(token(Id1, T), empty, Tokens) = true .
-    eq ready(token(Id1, T), (end(Id1, Id2), Nodes), Tokens) = false .
-    eq ready(token(Id1, 0), (merge(Id2, parallel, (Id3, Ids), Id3), Nodes), Tokens) = checkMerge((Id1, Ids), Tokens) .
-    eq ready(token(Id1, T), (No, Nodes), Tokens) = ready(token(Id1, T), Nodes, Tokens) .
+    eq ready(token(Id, T), empty, Tokens) = true .
+    eq ready(token(Id, T), (end(Id, Id1), Nodes),Tokens) = false .
+    eq ready(token(Id, 0), (merge(Id1, parallel, (Id,Ids), Id2), Nodes),Tokens) = checkMerge((Id,Ids),Tokens) .
+    eq ready(token(Id, T), (N, Nodes),Tokens) =  ready(token(Id, T), Nodes,Tokens) .
 
     op readyTokens : Set{Token} Set{Node} -> Set{Token} .
     eq readyTokens(empty, Nodes) = empty .
-    ceq readyTokens((token(Id1, T), Tokens), Nodes) = (token(Id1, T), readyTokens(Tokens, Nodes)) if ready(token(Id1, T), Nodes, Tokens) .
-    ceq readyTokens((token(Id1, T), Tokens), Nodes) = readyTokens(Tokens, Nodes) if not(ready(token(Id1, T), Nodes, Tokens)) . 
-
-    op deleteTokens : Set{Id} Set{Token} -> Set{Token} .
-    eq deleteTokens(empty, empty) = empty .
-    eq deleteTokens(empty, Tokens) = Tokens .
-    eq deleteTokens((Id1, Ids), (token(Id1, T), Tokens)) = deleteTokens(Ids, Tokens) .
-    eq deleteTokens((Id1, Ids), (token(Id2, T), Tokens)) = deleteTokens(Ids, (deleteTokens(Id1, Tokens), token(Id2, T))) .
+    ceq readyTokens((token(Id, T), Tokens), Nodes) = (token(Id, T), readyTokens(Tokens, Nodes)) if ready(token(Id, T), Nodes,Tokens) .
+    ceq readyTokens((token(Id, T), Tokens), Nodes) = readyTokens(Tokens, Nodes) if not(ready(token(Id, T), Nodes,Tokens)) .
 
     op getFlow : Set{Id} Set{Flow} -> Set{Flow} .
     eq getFlow (empty,empty) = empty .
@@ -180,63 +163,79 @@ mod BPMN-SEM is
     eq getFlowById(Id1, (flow(Id1,T), Flows)) = flow(Id1, T) .
     eq getFlowById(Id1, (flow(Id2,T), Flows)) = getFlowById(Id1, Flows) .
 
-    op resourcesAvailables : Set{Id} Set{Resource} -> Bool .
-    eq resourcesAvailables(empty, empty) = true .
-    eq resourcesAvailables(empty, R) = true .
-    eq resourcesAvailables((Id1, Ids), (resource(Id1, N, 0), R)) = false .
-    eq resourcesAvailables((Id1, Ids), (resource(Id1, N, s 0), R)) = resourcesAvailables(Ids, R) .
-
-    op takeResources : Set{Id} Set{Resource} -> Set{Resource} .
-    eq takeResources(empty, empty) = empty .
-    eq takeResources(empty, R) = R .
-    eq takeResources((Id1, Ids), (resource(Id1, N, 0), R)) = (resource(Id1, N, 0), takeResources(Ids, R)) .
-    
-    op returnResources : Set{Id} Set{Resource} -> Set{Resource} .
-    eq returnResources(empty, empty) = empty .
-    eq returnResources(empty, R) = R .
-    eq returnResources((Id1, Ids), (resource(Id1, N, 0), R)) = (resource(Id1, N, 1), returnResources(Ids, R)) .
-
     op generateToken : Set{Flow} -> Set{Token} .
     eq generateToken(empty) = empty .
     eq generateToken((flow(Id1, T), Flows)) = (token(Id1, T), generateToken(Flows)) .
+
+    op checkMerge : Set{Id} Set{Token} -> Bool .
+    eq checkMerge(empty, empty) = true .
+    eq checkMerge(empty, Tokens) = true .
+    eq checkMerge((Id1, Ids), Tokens) = ((checkMergeById(Id1, Tokens)) and checkMerge(Ids, Tokens)) .
+
+    op checkMergeById : Id Set{Token} -> Bool .
+    eq checkMergeById(Id1, empty) = false .
+    eq checkMergeById(Id1, (token(Id1, 0), Tokens)) = true .
+    eq checkMergeById(Id1, (token(Id2, T), Tokens)) = checkMergeById(Id1, Tokens) .
+
+    op deleteTokens : Set{Id} Set{Token} -> Set{Token} .
+    eq deleteTokens(empty, empty) = empty .
+    eq deleteTokens(empty, Tokens) = Tokens .
+    eq deleteTokens((Id1, Ids), (token(Id1, T), Tokens)) = deleteTokens(Ids, Tokens) .
+    eq deleteTokens((Id1, Ids), (token(Id2, T), Tokens)) = deleteTokens(Ids, (deleteTokens(Id1, Tokens), token(Id2, T))) .
+
+    op resourcesreadys : Set{Id} Set{Resource} -> Bool .
+    eq resourcesreadys(empty, empty) = true .
+    eq resourcesreadys(empty, R) = true .
+    eq resourcesreadys((Id, Ids), (resource(Id, M, 0), R)) = false .
+    eq resourcesreadys((Id, Ids), (resource(Id, M, 1), R)) = resourcesreadys(Ids, R) .
+
+    op takeResourses : Set{Id} Set{Resource} -> Set{Resource} .
+    eq takeResourses(empty, empty) = empty .
+    eq takeResourses(empty, R) = R .
+    eq takeResourses((Id, Ids), (resource(Id, M, 1), R)) = (resource(Id, M, 0), takeResourses(Ids, R))  .
+
+    op returnResources : Set{Id} Set{Resource} -> Set{Resource} .
+    eq returnResources(empty, empty) = empty .
+    eq returnResources(empty, R) = R .
+    eq returnResources((Id, Ids), (resource(Id, M, 0), R)) = (resource(Id, M, 1), returnResources(Ids, R))  .    
     *** Reglas
 
     *** La gestión del tiempo se gestionará con una regla tick.
-    crl [tick] : < O : Process | gtime: T, tokens: Tokens, Atts >
-        => delta(< O : Process | gtime: T, tokens: Tokens, Atts >, T') if T' := mte(< O : Process | gtime: T, tokens: Tokens, Atts >) /\ 0 < T' /\ (T + T') <= 100 .
+    crl [tick] : < o : Process | gtime: T, tokens: Tokens, Atts > 
+        => delta(< o : Process | gtime: T, tokens: Tokens, Atts >, T') if T' := mte(< o : Process | gtime: T, tokens: Tokens, Atts >) /\ 0 < T' /\ (T + T') <= 100 .
 
     *** Al comenzar la ejecución del proceso anterior tenemos un token en el nodo inicial, una vez su tiempo se hace 0, el token pasará al flujo de salId1a de dicho nodo inicial.
-    rl [start] : < O : Process | nodes: (start(Id1, Id2), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id1, 0), Tokens), Atts >
-    => < O : Process | nodes: (start(Id1, Id2), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id2, T), Tokens), Atts > .
-
+    rl [start-flow] : < o : Process | nodes: (start(Id1, Id2), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id1, 0), Tokens), Atts > 
+                  =>  < o : Process | nodes: (start(Id1, Id2), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id2, T), Tokens), Atts > .
+    
     *** Una vez se den las condiciones, el token será movId1o a la tarea, y cuando su temporizador sea cero, la ejecución de la misma terminará y el token podrá ser movId1o al flujo de salId1a de la misma.
-    crl [flow-task] : < O : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id2, T'), Flows), tokens: (token(Id2, 0), Tokens), resources: Resources, Atts >
-                  =>  < O : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id2, T'), Flows), tokens: (token(Id1, T), Tokens), resources: takeResources(Ids, Resources), Atts > if (resourcesAvailables(Ids, Resources)) .  
+    crl [flow-task] : < o : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id2, T'), Flows), tokens: (token(Id2, 0), Tokens), resources: R, Atts > 
+                  =>  < o : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id2, T'), Flows), tokens: (token(Id1, T), Tokens), resources: takeResourses(Ids, R), Atts > if (resourcesreadys(Ids, R)) .  
     
     *** CUando un token se coloca en un flujo, este token se inicializa con el tiempo de retarso del flujo corresponsiente
-    rl [task-flow] : < O : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id3, T'), Flows), tokens: (token(Id1, 0), Tokens), resources: R, Atts > 
-                 =>  < O : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id3, T'), Flows), tokens: (token(Id3, T'), Tokens), resources: returnResources(Ids, R), Atts > .
-                 
-    rl [flow-end] : < O : Process | nodes: (end(Id1, Id2), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id2, 0), Tokens), Atts >
-                => < O : Process | nodes: (end(Id1, Id2), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id1, 0), Tokens), Atts > .
+    rl [task-flow] : < o : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id3, T'), Flows), tokens: (token(Id1, 0), Tokens), resources: R, Atts > 
+                 =>  < o : Process | nodes: (task(Id1, Name, Id2, Id3, T, Ids), Nodes), flows: (flow(Id3, T'), Flows), tokens: (token(Id3, T'), Tokens), resources: returnResources(Ids, R), Atts > .
+    
+    rl [flow-end] : < o : Process | nodes: (end(Id1, Id2), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id2, 0), Tokens), Atts > 
+                =>  < o : Process | nodes: (end(Id1, Id2), Nodes), flows: (flow(Id2, T), Flows), tokens: Tokens, Atts > .
+    
+    rl [flow-mergeE] : < o : Process | nodes: (merge(Id1, exclusive,(Id2, Ids), Id3), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id2, 0), Tokens), Atts > 
+                    => < o : Process | nodes: (merge(Id1, exclusive,(Id2, Ids), Id3), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id1, 0), Tokens), Atts > .
 
-    rl [flow-mergeE] : < O : Process | nodes: (merge(Id1, exclusive,(Id2, Ids), Id3), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id2, 0), Tokens), Atts > 
-                    => < O : Process | nodes: (merge(Id1, exclusive,(Id2, Ids), Id3), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id1, 0), Tokens), Atts > .
+    rl [merge-flow] : < o : Process | nodes: (merge(Id1, G, Ids, Id2), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id1, 0), Tokens), Atts > 
+                   => < o : Process | nodes: (merge(Id1, G, Ids, Id2), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id2, T), Tokens), Atts > .
 
-    rl [merge-flow] : < O : Process | nodes: (merge(Id1, G, Id2, Id3), Nodes), flows: (flow(Id3, T), Flows), tokens: (token(Id1, 0), Tokens), Atts > 
-                   => < O : Process | nodes: (merge(Id1, G, Id2, Id3), Nodes), flows: (flow(Id3, T), Flows), tokens: (token(Id3, T), Tokens), Atts > .
+    rl [flow-split] : < o : Process | nodes: (split(Id1, G, Id3, (Id2, Ids)), Nodes), flows: (flow(Id3, T), Flows), tokens: (token(Id3, 0), Tokens), Atts > 
+                   => < o : Process | nodes: (split(Id1, G, Id3, (Id2, Ids)), Nodes), flows: (flow(Id3, T), Flows), tokens: (token(Id1, 0), Tokens), Atts > .
+    
+    rl [splitE-flow] : < o : Process | nodes: (split(Id1, exclusive, Id3, (Id2, Ids)), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id1, 0), Tokens), Atts > 
+                    => < o : Process | nodes: (split(Id1, exclusive, Id3, (Id2, Ids)), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id2, T), Tokens), Atts > .
 
-    rl [flow-split] : < O : Process | nodes: (split(Id1, G, Id2, (Id3, Ids)), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id2, 0), Tokens), Atts >
-                    => < O : Process | nodes: (split(Id1, G, Id2, (Id3, Ids)), Nodes), flows: (flow(Id2, T), Flows), tokens: (token(Id1, 0), Tokens), Atts > .
-
-    rl [splitE-flow] : < O : Process | nodes: (split(Id1, exclusive, Id2, (Id3, Ids)), Nodes), flows: (flow(Id3, T), Flows), tokens: (token(Id1, 0), Tokens), Atts > 
-                    => < O : Process | nodes: (split(Id1, exclusive, Id2, (Id3, Ids)), Nodes), flows: (flow(Id3, T), Flows), tokens: (token(Id3, T), Tokens), Atts > .
-
-    rl [splitP-flow] : < O : Process | nodes: (split(Id1, parallel, Id2, Ids), Nodes), flows: Flows, tokens: (token(Id1, 0), Tokens), Atts > 
-                    => < O : Process | nodes: (split(Id1, parallel, Id2, Ids), Nodes), flows: Flows, tokens: (generateToken(getFlow(Ids, Flows)), Tokens), Atts > .
-
-    crl [flow-mergeP] : < O : Process | nodes: (merge(Id1, parallel, Ids, Id2), Nodes), flows: Flows, tokens: Tokens, Atts > 
-                     => < O : Process | nodes: (merge(Id1, parallel, Ids, Id2), Nodes), flows: Flows, tokens: (token(Id1, 0), deleteTokens(Ids, Tokens)), Atts > if checkMerge(Ids, Tokens) .
+    rl [splitP-flow] : < o : Process | nodes: (split(Id1, parallel, Id2, Ids), Nodes), flows: Flows, tokens: (token(Id1, 0), Tokens), Atts > 
+                    => < o : Process | nodes: (split(Id1, parallel, Id2, Ids), Nodes), flows: Flows, tokens: (generateToken(getFlow(Ids, Flows)), Tokens), Atts > .    
+    
+    crl [flow-mergeP] : < o : Process | nodes: (merge(Id1, parallel, Ids, Id2), Nodes), flows: Flows, tokens: Tokens, Atts > 
+                     => < o : Process | nodes: (merge(Id1, parallel, Ids, Id2), Nodes), flows: Flows, tokens: (token(Id1, 0), deleteTokens(Ids, Tokens)), Atts > if checkMerge(Ids, Tokens) .
 
 endm
 *** Los flujos tienen un retraso.
